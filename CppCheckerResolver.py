@@ -16,6 +16,58 @@ import argparse
 import os
 from ExecUtil import ExecUtil
 
+class CppCheckerUtil:
+    def __init__(self, cppchecker_path):
+        self.cppchecker_path = cppchecker_path
+
+    def parse_line(self, line):
+        filename = None
+        line_number = None
+        message = None
+
+        if line.startswith("| "):
+            pos = line.find(" | ")
+            if pos!=None:
+                filename = line[2:pos]
+                line = line[pos+3:]
+                pos = line.find(" | ")
+                if pos!=None:
+                    try:
+                        line_number = int(line[0:pos])
+                    except:
+                        pass
+                    line = line[pos+3:]
+                    pos = line.find(" |")
+                    if pos!=None:
+                        message = line[0:pos]
+
+        if filename=="filename" or filename==":---":
+            filename=None
+        if message==":---":
+            message=None
+
+        return filename, line_number, message
+
+    def parse_result(self, lines, target_path=None):
+        result = {}
+        for line in lines:
+            filename, line_number, message = self.parse_line(line)
+            if filename and line_number and message:
+                if not target_path or os.path.exists(os.path.join(target_path, filename)):
+                    if not filename in result:
+                        result[filename] = []
+                    result[filename].append( [line_number, message] )
+        return result
+
+
+    def execute(self, target_path):
+        exec_cmd = f'ruby {self.cppchecker_path} {target_path} -m detail -s --detailSection=\"filename|line|message|\"'
+
+        result = self.parse_result(ExecUtil.getExecResultEachLine(exec_cmd, target_path, False), target_path)
+
+        return result
+
+
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='CppCheck Resolver')
@@ -24,8 +76,11 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    for target_path in args.args:
-        exec_cmd = f'ruby {args.cppcheck} {target_path} -m detail -s --detailSection=\"filename|line|message|\"'
-        result = ExecUtil.getExecResultEachLine(exec_cmd, target_path, False)
-        for line in result:
-            print(line)
+    if os.path.exists(args.cppcheck):
+        cppchecker = CppCheckerUtil(args.cppcheck)
+
+        for target_path in args.args:
+            results = cppchecker.execute(target_path)
+            for filename, reports in results.items():
+                for report in reports:
+                    print(f"{filename},{report[0]},{report[1]}")
