@@ -14,6 +14,10 @@
 
 import argparse
 import os
+import sys
+import json
+import select
+from GptHelper import GptClientFactory, IGpt, GptQueryWithCheck
 from ExecUtil import ExecUtil
 
 class CppCheckerUtil:
@@ -68,13 +72,77 @@ class CppCheckerUtil:
         return result
 
 
+class CppCheckerResolverWithLLM(GptQueryWithCheck):
+    PROMPT_FILE = os.path.join(os.path.dirname(__file__), "cppcheck_resolver.json")
+
+    def __init__(self, client=None, promptfile=None):
+        if not promptfile:
+            promptfile = self.PROMPT_FILE
+        super().__init__(client, promptfile)
+
+    def is_ok_query_result(self, query_result):
+        # TODO: IMPROVE THIS
+        query_result = str(query_result).strip()
+        if not query_result:
+            return False
+        return True
+
+    def query(self, lines, relative_pos, message):
+        if isinstance(lines, list):
+            lines = "\n".join(lines)
+
+        replace_keydata={
+            "[CPPCHECK]": message,
+            "[RELATIVE_POSITION]": relative_pos,
+            "[TARGET_LINES]": lines,
+        }
+        return super().query(replace_keydata)
+
+
+class CppCheckerResolver:
+    def __init__(self, resolver, margin_lines=10):
+        self.resolver = resolver
+        self.margin_lines = margin_lines
+
+    def extract_target_lines(self, lines, target_line):
+        start_pos = max(target_line-self.margin_lines, 0)
+        end_pos = min(target_line+self.margin_lines, len(lines))
+        target_lines = "\n".join(lines[start_pos:end_pos])
+        return target_lines, target_line-start_pos
+
+    def execute(self, base_dir, filename, reports):
+        resolved_outputs = []
+        target_path = os.path.join(base_dir, filename)
+        print(target_path)
+        lines = IGpt.files_reader(target_path)
+        lines = lines.splitlines()
+        for report in reports:
+            target_lines, relative_pos = self.extract_target_lines(lines, report[0])
+            resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[1])
+            resolved_outputs.append(resolved_output)
+            print(resolved_output)
+            exit()
+        return resolved_outputs
+
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='CppCheck Resolver')
     parser.add_argument('args', nargs='*', help='target folder or android_home')
     parser.add_argument('--cppcheck', default=os.path.dirname(os.path.abspath(__file__))+"/../CppChecker/CppChecker.rb", help='Specify the path for CppChecker.rb')
+    parser.add_argument('-m', '--marginline', default=10, type=int, action='store', help='Specify margin lines')
+
+    parser.add_argument('-c', '--useclaude', action='store_true', default=False, help='specify if you want to use calude3')
+    parser.add_argument('-g', '--gpt', action='store', default="openai", help='specify openai or calude3 or openaicompatible')
+    parser.add_argument('-k', '--apikey', action='store', default=None, help='specify your API key or set it in AZURE_OPENAI_API_KEY env')
+    parser.add_argument('-y', '--secretkey', action='store', default=os.getenv("AWS_SECRET_ACCESS_KEY"), help='specify your secret key or set it in AWS_SECRET_ACCESS_KEY env (for claude3)')
+    parser.add_argument('-e', '--endpoint', action='store', default=None, help='specify your end point or set it in AZURE_OPENAI_ENDPOINT env')
+    parser.add_argument('-d', '--deployment', action='store', default=None, help='specify deployment name or set it in AZURE_OPENAI_DEPLOYMENT_NAME env')
 
     args = parser.parse_args()
+
+    gpt_client = GptClientFactory.new_client(args)
+    llm_resolver = CppCheckerResolverWithLLM(gpt_client)
+    resolver = CppCheckerResolver(llm_resolver)
 
     if os.path.exists(args.cppcheck):
         cppchecker = CppCheckerUtil(args.cppcheck)
@@ -82,5 +150,6 @@ if __name__=="__main__":
         for target_path in args.args:
             results = cppchecker.execute(target_path)
             for filename, reports in results.items():
-                for report in reports:
-                    print(f"{filename},{report[0]},{report[1]}")
+                resolved_outputs = resolver.execute(target_path, filename, reports)
+                for resolved_output in resolved_outputs:
+                    print(resolved_output)
