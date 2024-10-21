@@ -19,6 +19,7 @@ import json
 import select
 from GptHelper import GptClientFactory, IGpt, GptQueryWithCheck
 from ExecUtil import ExecUtil
+from JsonCache import JsonCache
 
 class CppCheckerUtil:
     def __init__(self, cppchecker_path):
@@ -103,10 +104,13 @@ class CppCheckerResolver:
     def __init__(self, resolver, margin_lines=10):
         self.resolver = resolver
         self.margin_lines = margin_lines
+        self.cache = JsonCache(os.path.join(JsonCache.DEFAULT_CACHE_BASE_DIR, "CppCheckerResolver"),  JsonCache.CACHE_INFINITE)
 
-    def extract_target_lines(self, lines, target_line):
-        start_pos = max(target_line-self.margin_lines, 0)
-        end_pos = min(target_line+self.margin_lines, len(lines))
+    def extract_target_lines(self, lines, target_line, margin_lines=None):
+        if margin_lines==None:
+            margin_lines = self.margin_lines
+        start_pos = max(target_line-margin_lines, 0)
+        end_pos = min(target_line+margin_lines, len(lines))
         target_lines = "\n".join(lines[start_pos:end_pos])
         return target_lines, target_line-start_pos
 
@@ -117,8 +121,13 @@ class CppCheckerResolver:
         lines = IGpt.files_reader(target_path)
         lines = lines.splitlines()
         for report in reports:
-            target_lines, relative_pos = self.extract_target_lines(lines, report[0])
-            resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[1])
+            target_lines, relative_pos = self.extract_target_lines(lines, report[0], 3)
+            uri = filename + ":" + target_lines + ":" + str(relative_pos)
+            resolved_output = self.cache.restoreFromCache(uri)
+            if resolved_output==None:
+                target_lines, relative_pos = self.extract_target_lines(lines, report[0])
+                resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[1])
+                self.cache.storeToCache(uri, resolved_output)
             resolved_outputs.append(resolved_output)
             print(resolved_output)
             exit()
