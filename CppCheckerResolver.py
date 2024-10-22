@@ -114,6 +114,17 @@ class CppCheckerResolver:
         target_lines = "\n".join(lines[start_pos:end_pos])
         return target_lines, target_line-start_pos
 
+    def get_cache_identifier(self, lines, target_line):
+        target_lines, relative_pos = self.extract_target_lines(lines, target_line, 3)
+
+        target_lines_length = len(target_lines)
+        target_lines_length = min(target_lines_length, 200) # tentative value
+        target_lines = target_lines[0:target_lines_length]
+
+        uri = filename + ":" + target_lines + ":" + str(relative_pos)
+
+        return uri
+
     def execute(self, base_dir, filename, reports):
         resolved_outputs = []
         target_path = os.path.join(base_dir, filename)
@@ -121,10 +132,10 @@ class CppCheckerResolver:
         lines = IGpt.files_reader(target_path)
         lines = lines.splitlines()
         for report in reports:
-            target_lines, relative_pos = self.extract_target_lines(lines, report[0], 3)
-            uri = filename + ":" + target_lines + ":" + str(relative_pos)
+            uri = self.get_cache_identifier(lines, report[0])
             resolved_output = self.cache.restoreFromCache(uri)
             if resolved_output==None:
+                # no hit in the cache
                 target_lines, relative_pos = self.extract_target_lines(lines, report[0])
                 resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[1])
                 self.cache.storeToCache(uri, resolved_output)
