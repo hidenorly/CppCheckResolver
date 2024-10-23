@@ -128,7 +128,6 @@ class CppCheckerResolver:
     def execute(self, base_dir, filename, reports):
         resolved_outputs = []
         target_path = os.path.join(base_dir, filename)
-        print(target_path)
         lines = IGpt.files_reader(target_path)
         lines = lines.splitlines()
         for report in reports:
@@ -138,10 +137,9 @@ class CppCheckerResolver:
                 # no hit in the cache
                 target_lines, relative_pos = self.extract_target_lines(lines, report[0])
                 resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[1])
-                self.cache.storeToCache(uri, resolved_output)
+                resolved_output = {"filename": filename, "pos": report[0], "message": report[1], "resolution": resolved_output}
+                self.cache.storeToCache(uri, resolved_output )
             resolved_outputs.append(resolved_output)
-            print(resolved_output)
-            exit()
         return resolved_outputs
 
 
@@ -172,4 +170,7 @@ if __name__=="__main__":
             for filename, reports in results.items():
                 resolved_outputs = resolver.execute(target_path, filename, reports)
                 for resolved_output in resolved_outputs:
-                    print(resolved_output)
+                    print("")
+                    print(f"# {resolved_output["filename"]}:{resolved_output["pos"]}:{resolved_output["message"]}")
+                    print("")
+                    print(resolved_output["resolution"])
