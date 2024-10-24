@@ -28,6 +28,7 @@ class CppCheckerUtil:
     def parse_line(self, line):
         filename = None
         line_number = None
+        message_id = None
         message = None
 
         if line.startswith("| "):
@@ -42,31 +43,49 @@ class CppCheckerUtil:
                     except:
                         pass
                     line = line[pos+3:]
-                    pos = line.find(" |")
+                    pos = line.find(" | ")
                     if pos!=None:
-                        message = line[0:pos]
+                        message_id = line[0:pos].strip()
+                        line = line[pos+3:]
+                        pos = line.find(" |")
+                        if pos!=None:
+                            message = line[0:pos]
 
         if filename=="filename" or filename==":---":
             filename=None
         if message==":---":
             message=None
 
-        return filename, line_number, message
+        return filename, line_number, message_id, message
 
     def parse_result(self, lines, target_path=None):
         result = {}
+
         for line in lines:
-            filename, line_number, message = self.parse_line(line)
-            if filename and line_number and message:
+            filename, line_number, message_id, message = self.parse_line(line)
+            if filename and line_number and message_id and message:
                 if not target_path or os.path.exists(os.path.join(target_path, filename)):
                     if not filename in result:
-                        result[filename] = []
-                    result[filename].append( [line_number, message] )
-        return result
+                        result[filename] = {}
+                    if not line_number in result[filename]:
+                        result[filename][line_number] = {}
+                    if not message_id in result[filename][line_number]:
+                        result[filename][line_number][message_id] = []
+                    result[filename][line_number][message_id].append(message)
+
+        cleaned_result = {}
+        for filename, report in result.items():
+            cleaned_result[filename] = []
+            for line_number, messages in report.items():
+                for message_id, _messages in messages.items():
+                    for msg in _messages:
+                        cleaned_result[filename].append( [int(line_number), message_id, msg] )
+
+        return cleaned_result
 
 
     def execute(self, target_path):
-        exec_cmd = f'ruby {self.cppchecker_path} {target_path} -m detail -s --detailSection=\"filename|line|message|\"'
+        exec_cmd = f'ruby {self.cppchecker_path} {target_path} -m detail -s --detailSection=\"filename|line|id|message|\"'
 
         result = self.parse_result(ExecUtil.getExecResultEachLine(exec_cmd, target_path, False), target_path)
 
@@ -114,14 +133,14 @@ class CppCheckerResolver:
         target_lines = "\n".join(lines[start_pos:end_pos])
         return target_lines, target_line-start_pos
 
-    def get_cache_identifier(self, lines, target_line):
+    def get_cache_identifier(self, lines, target_line, report):
         target_lines, relative_pos = self.extract_target_lines(lines, target_line, 3)
 
         target_lines_length = len(target_lines)
         target_lines_length = min(target_lines_length, 200) # tentative value
         target_lines = target_lines[0:target_lines_length]
 
-        uri = filename + ":" + target_lines + ":" + str(relative_pos)
+        uri = filename + ":" + target_lines + ":" + str(relative_pos) + ":" + report
 
         return uri
 
@@ -131,13 +150,13 @@ class CppCheckerResolver:
         lines = IGpt.files_reader(target_path)
         lines = lines.splitlines()
         for report in reports:
-            uri = self.get_cache_identifier(lines, report[0])
+            uri = self.get_cache_identifier(lines, report[0], report[1]) # pos, message_id
             resolved_output = self.cache.restoreFromCache(uri)
             if resolved_output==None:
                 # no hit in the cache
                 target_lines, relative_pos = self.extract_target_lines(lines, report[0])
-                resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[1])
-                resolved_output = {"filename": filename, "pos": report[0], "message": report[1], "resolution": resolved_output}
+                resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[2])
+                resolved_output = {"filename": filename, "pos": report[0], "message": report[2], "resolution": resolved_output}
                 self.cache.storeToCache(uri, resolved_output )
             resolved_outputs.append(resolved_output)
         return resolved_outputs
