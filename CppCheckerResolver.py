@@ -73,15 +73,7 @@ class CppCheckerUtil:
                         result[filename][line_number][message_id] = []
                     result[filename][line_number][message_id].append(message)
 
-        cleaned_result = {}
-        for filename, report in result.items():
-            cleaned_result[filename] = []
-            for line_number, messages in report.items():
-                for message_id, _messages in messages.items():
-                    for msg in _messages:
-                        cleaned_result[filename].append( [int(line_number), message_id, msg] )
-
-        return cleaned_result
+        return result
 
 
     def execute(self, target_path):
@@ -149,16 +141,18 @@ class CppCheckerResolver:
         target_path = os.path.join(base_dir, filename)
         lines = IGpt.files_reader(target_path)
         lines = lines.splitlines()
-        for report in reports:
-            uri = self.get_cache_identifier(lines, report[0], report[1]) # pos, message_id
-            resolved_output = self.cache.restoreFromCache(uri)
-            if resolved_output==None:
-                # no hit in the cache
-                target_lines, relative_pos = self.extract_target_lines(lines, report[0])
-                resolved_output, _ = self.resolver.query(target_lines, relative_pos, report[2])
-                resolved_output = {"filename": filename, "pos": report[0], "message": report[2], "resolution": resolved_output}
-                self.cache.storeToCache(uri, resolved_output )
-            resolved_outputs.append(resolved_output)
+        for line_number, messages in reports.items():
+            for message_id, multiple_messages in messages.items():
+                uri = self.get_cache_identifier(lines, line_number, message_id)
+                resolved_output = self.cache.restoreFromCache(uri)
+                if resolved_output==None:
+                    # no hit in the cache
+                    flatten_messages = "\n".join(multiple_messages)
+                    target_lines, relative_pos = self.extract_target_lines(lines, line_number)
+                    resolved_output, _ = self.resolver.query(target_lines, relative_pos, flatten_messages)
+                    resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
+                    self.cache.storeToCache(uri, resolved_output )
+                resolved_outputs.append(resolved_output)
         return resolved_outputs
 
 
@@ -190,6 +184,6 @@ if __name__=="__main__":
                 resolved_outputs = resolver.execute(target_path, filename, reports)
                 for resolved_output in resolved_outputs:
                     print("")
-                    print(f"# {resolved_output["filename"]}:{resolved_output["pos"]}:{resolved_output["message"]}")
+                    print(f"# {resolved_output["filename"]}:{resolved_output["pos"]}:{resolved_output["message"].split("\n")[0]}")
                     print("")
                     print(resolved_output["resolution"])
