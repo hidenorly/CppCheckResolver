@@ -125,12 +125,21 @@ class CppCheckerResolver:
         target_lines = "\n".join(lines[start_pos:end_pos])
         return target_lines, target_line-start_pos
 
-    def get_cache_identifier(self, lines, target_line, report):
+    def cut_off_string(self, input_string, max_length):
+        input_string_length = len(input_string)
+        input_string_length = min(input_string_length, max_length)
+        return input_string[0:input_string_length]
+
+    def get_cache_identifier(self, filename, lines, target_line, report):
         target_lines, relative_pos = self.extract_target_lines(lines, target_line, 3)
 
-        target_lines_length = len(target_lines)
-        target_lines_length = min(target_lines_length, 200) # tentative value
-        target_lines = target_lines[0:target_lines_length]
+        allowed_length = max(240-len(filename), 0)
+        if allowed_length==0:
+            filename = self.cut_off_string(filename, 128)
+            allowed_length = 112
+
+        target_lines = self.cut_off_string(target_lines, int(allowed_length*0.8))
+        report = self.cut_off_string(report, int(allowed_length*0.2))
 
         uri = filename + ":" + target_lines + ":" + str(relative_pos) + ":" + report
 
@@ -141,18 +150,26 @@ class CppCheckerResolver:
         target_path = os.path.join(base_dir, filename)
         lines = IGpt.files_reader(target_path)
         lines = lines.splitlines()
+
         for line_number, messages in reports.items():
-            for message_id, multiple_messages in messages.items():
-                uri = self.get_cache_identifier(lines, line_number, message_id)
-                resolved_output = self.cache.restoreFromCache(uri)
-                if resolved_output==None:
-                    # no hit in the cache
-                    flatten_messages = "\n".join(multiple_messages)
-                    target_lines, relative_pos = self.extract_target_lines(lines, line_number)
-                    resolved_output, _ = self.resolver.query(target_lines, relative_pos, flatten_messages)
-                    resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
-                    self.cache.storeToCache(uri, resolved_output )
-                resolved_outputs.append(resolved_output)
+            message_id = "_".join(messages.keys())
+            multiple_messages = []
+            for _messages in messages.values():
+                multiple_messages.extend(_messages)
+
+            uri = self.get_cache_identifier(filename, lines, line_number, message_id)
+            resolved_output = self.cache.restoreFromCache(uri)
+
+            if resolved_output==None:
+                # no hit in the cache
+                flatten_messages = "\n".join(multiple_messages)
+                target_lines, relative_pos = self.extract_target_lines(lines, line_number)
+                resolved_output, _ = self.resolver.query(target_lines, relative_pos, flatten_messages)
+                resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
+                self.cache.storeToCache(uri, resolved_output )
+
+            resolved_outputs.append(resolved_output)
+
         return resolved_outputs
 
 
