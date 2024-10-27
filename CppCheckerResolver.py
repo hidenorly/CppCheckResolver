@@ -130,13 +130,16 @@ class CppCheckerResolver:
         input_string_length = min(input_string_length, max_length)
         return input_string[0:input_string_length]
 
+    MAX_FILENAME_LENGTH = 240
+    BUDGET_FILENAME_LENGTH = 128
+
     def get_cache_identifier(self, filename, lines, target_line, report):
         target_lines, relative_pos = self.extract_target_lines(lines, target_line, 3)
 
-        allowed_length = max(240-len(filename), 0)
+        allowed_length = max(self.MAX_FILENAME_LENGTH-len(filename), 0)
         if allowed_length==0:
-            filename = self.cut_off_string(filename, 128)
-            allowed_length = 112
+            filename = self.cut_off_string(filename, self.BUDGET_FILENAME_LENGTH)
+            allowed_length = self.MAX_FILENAME_LENGTH - self.BUDGET_FILENAME_LENGTH
 
         target_lines = self.cut_off_string(target_lines, int(allowed_length*0.8))
         report = self.cut_off_string(report, int(allowed_length*0.2))
