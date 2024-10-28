@@ -201,9 +201,11 @@ if __name__=="__main__":
         for target_path in args.args:
             results = cppchecker.execute(target_path)
             for filename, reports in results.items():
+                print(f"# {filename}")
+                print("")
                 resolved_outputs = resolver.execute(target_path, filename, reports)
                 for resolved_output in resolved_outputs:
-                    print("")
-                    print(f"# {resolved_output["filename"]}:{resolved_output["pos"]}:{resolved_output["message"].split("\n")[0]}")
+                    print(f"## {resolved_output["message"].split("\n")[0]} (line:{resolved_output["pos"]})")
                     print("")
                     print(resolved_output["resolution"])
+                    print("")
