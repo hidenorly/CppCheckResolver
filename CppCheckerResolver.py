@@ -204,6 +204,7 @@ if __name__=="__main__":
                 print(f"# {filename}")
                 print("")
                 resolved_outputs = resolver.execute(target_path, filename, reports)
+                resolved_outputs = sorted(resolved_outputs, key=lambda x: (x["filename"], x["pos"]))
                 for resolved_output in resolved_outputs:
                     print(f"## {resolved_output["message"].split("\n")[0]} (line:{resolved_output["pos"]})")
                     print("")
