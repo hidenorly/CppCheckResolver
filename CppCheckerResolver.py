@@ -112,10 +112,16 @@ class CppCheckerResolverWithLLM(GptQueryWithCheck):
 
 
 class CppCheckerResolver:
+    CACHE_ID = "CppCheckerResolver"
+
     def __init__(self, resolver, margin_lines=10):
         self.resolver = resolver
         self.margin_lines = margin_lines
-        self.cache = JsonCache(os.path.join(JsonCache.DEFAULT_CACHE_BASE_DIR, "CppCheckerResolver"),  JsonCache.CACHE_INFINITE)
+        self.cache = JsonCache(os.path.join(JsonCache.DEFAULT_CACHE_BASE_DIR, self.CACHE_ID),  JsonCache.CACHE_INFINITE)
+
+    def reset_cache(self):
+        self.cache.clearAllCache(self.CACHE_ID)
+
 
     def extract_target_lines(self, lines, target_line, margin_lines=None):
         if margin_lines==None:
@@ -189,11 +195,15 @@ if __name__=="__main__":
     parser.add_argument('-e', '--endpoint', action='store', default=None, help='specify your end point or set it in AZURE_OPENAI_ENDPOINT env')
     parser.add_argument('-d', '--deployment', action='store', default=None, help='specify deployment name or set it in AZURE_OPENAI_DEPLOYMENT_NAME env')
 
+    parser.add_argument('--reset', action='store_true', default=False, help='specify if you want to reset cache')
+
     args = parser.parse_args()
 
     gpt_client = GptClientFactory.new_client(args)
     llm_resolver = CppCheckerResolverWithLLM(gpt_client)
     resolver = CppCheckerResolver(llm_resolver)
+    if args.reset:
+        resolver.reset_cache()
 
     if os.path.exists(args.cppcheck):
         cppchecker = CppCheckerUtil(args.cppcheck)
