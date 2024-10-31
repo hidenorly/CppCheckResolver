@@ -154,7 +154,7 @@ class CppCheckerResolver:
 
         return uri
 
-    def execute(self, base_dir, filename, reports):
+    def execute(self, base_dir, filename, reports, is_only_new):
         resolved_outputs = []
         target_path = os.path.join(base_dir, filename)
         lines = IGpt.files_reader(target_path)
@@ -176,8 +176,12 @@ class CppCheckerResolver:
                 resolved_output, _ = self.resolver.query(target_lines, relative_pos, flatten_messages)
                 resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
                 self.cache.storeToCache(uri, resolved_output )
+            elif is_only_new:
+                # found in cache & only_new then should omit
+                resolved_output = None
 
-            resolved_outputs.append(resolved_output)
+            if resolved_output:
+                resolved_outputs.append(resolved_output)
 
         return resolved_outputs
 
@@ -197,6 +201,8 @@ if __name__=="__main__":
 
     parser.add_argument('--reset', action='store_true', default=False, help='specify if you want to reset cache')
 
+    parser.add_argument('--onlynew', action='store_true', default=False, help='specify if you want to report newly found resolution (cache misshit)')
+
     args = parser.parse_args()
 
     gpt_client = GptClientFactory.new_client(args)
@@ -211,12 +217,13 @@ if __name__=="__main__":
         for target_path in args.args:
             results = cppchecker.execute(target_path)
             for filename, reports in results.items():
-                print(f"# {filename}")
-                print("")
-                resolved_outputs = resolver.execute(target_path, filename, reports)
+                resolved_outputs = resolver.execute(target_path, filename, reports, args.onlynew)
                 resolved_outputs = sorted(resolved_outputs, key=lambda x: (x["filename"], x["pos"]))
-                for resolved_output in resolved_outputs:
-                    print(f"## {resolved_output["message"].split("\n")[0]} (line:{resolved_output["pos"]})")
+                if resolved_outputs:
+                    print(f"# {filename}")
                     print("")
-                    print(resolved_output["resolution"])
-                    print("")
+                    for resolved_output in resolved_outputs:
+                        print(f"## {resolved_output["message"].split("\n")[0]} (line:{resolved_output["pos"]})")
+                        print("")
+                        print(resolved_output["resolution"])
+                        print("")
