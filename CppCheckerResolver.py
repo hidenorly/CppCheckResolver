@@ -30,6 +30,8 @@ class CppCheckerUtil:
         line_number = None
         message_id = None
         message = None
+        commit_id = None
+        the_line = None
 
         if line.startswith("| "):
             pos = line.find(" | ")
@@ -47,22 +49,33 @@ class CppCheckerUtil:
                     if pos!=None:
                         message_id = line[0:pos].strip()
                         line = line[pos+3:]
-                        pos = line.find(" |")
+                        pos = line.find(" | ")
                         if pos!=None:
                             message = line[0:pos]
+                            line = line[pos+3:]
+                            pos = line.find(" | ")
+                            if pos!=None:
+                                commit_id = line[0:pos]
+                                line = line[pos+3:]
+                                pos = line.find("```")
+                                if pos!=None:
+                                    pos2 = line.find("```", pos+3)
+                                    if pos2!=None:
+                                        the_line = line[pos+3:pos2]
 
         if filename=="filename" or filename==":---":
             filename=None
         if message==":---":
             message=None
 
-        return filename, line_number, message_id, message
+        return filename, line_number, message_id, message, commit_id, the_line
 
     def parse_result(self, lines, target_path=None):
         result = {}
 
         for line in lines:
-            filename, line_number, message_id, message = self.parse_line(line)
+            filename, line_number, message_id, message, commit_id, the_line = self.parse_line(line)
+            #print(f'{filename}, {line_number}, {message_id}, {message}, {commit_id}, {the_line}')
             if filename and line_number and message_id and message:
                 if not target_path or os.path.exists(os.path.join(target_path, filename)):
                     if not filename in result:
@@ -77,7 +90,7 @@ class CppCheckerUtil:
 
 
     def execute(self, target_path):
-        exec_cmd = f'ruby {self.cppchecker_path} {target_path} -m detail -s --detailSection=\"filename|line|id|message|\"'
+        exec_cmd = f'ruby {self.cppchecker_path} {target_path} -m detail -s --detailSection=\"filename|line|id|message|commitId|theLine\"'
 
         result = self.parse_result(ExecUtil.getExecResultEachLine(exec_cmd, target_path, False), target_path)
 
