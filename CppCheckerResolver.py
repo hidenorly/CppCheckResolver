@@ -34,39 +34,34 @@ class CppCheckerUtil:
         the_line = None
 
         if line.startswith("| "):
-            pos = line.find(" | ")
-            if pos!=None:
-                filename = line[2:pos]
-                line = line[pos+3:]
-                pos = line.find(" | ")
+            cols = line.split(" | ")
+            if len(cols)==6:
+                filename = cols[0][2:]
+                try:
+                    line_number = int(cols[1])
+                except:
+                    pass
+                message_id = cols[2].strip()
+                message = cols[3]
+                commit_id = cols[4]
+
+                line = cols[5]
+                pos = line.find("```")
                 if pos!=None:
-                    try:
-                        line_number = int(line[0:pos])
-                    except:
-                        pass
-                    line = line[pos+3:]
-                    pos = line.find(" | ")
-                    if pos!=None:
-                        message_id = line[0:pos].strip()
-                        line = line[pos+3:]
-                        pos = line.find(" | ")
-                        if pos!=None:
-                            message = line[0:pos]
-                            line = line[pos+3:]
-                            pos = line.find(" | ")
-                            if pos!=None:
-                                commit_id = line[0:pos]
-                                line = line[pos+3:]
-                                pos = line.find("```")
-                                if pos!=None:
-                                    pos2 = line.find("```", pos+3)
-                                    if pos2!=None:
-                                        the_line = line[pos+3:pos2]
+                    pos2 = line.find("```", pos+3)
+                    if pos2!=None:
+                        the_line = line[pos+3:pos2]
 
         if filename=="filename" or filename==":---":
             filename=None
-        if message==":---":
+        if message==":---" or message=="message":
             message=None
+        if message_id==":---" or message_id=="id":
+            message_id=None
+        if commit_id==":---" or commit_id=="commitId":
+            commit_id=None
+        if the_line=="-- " or the_line=="eLine ":
+            the_line=None
 
         return filename, line_number, message_id, message, commit_id, the_line
 
