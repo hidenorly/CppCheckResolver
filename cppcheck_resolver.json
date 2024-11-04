@@ -1,0 +1,4 @@
+{
+  "system_prompt" : "You're security architect. code is expected to quote by ``` and ```",
+  "user_prompt": "There is cppcheck's vulnerablity report. The following is a part of code which cppcheck reported. Please output the resolved code to fix the reported error.\n\nCppCheck report:[CPPCHECK] for the following line:[RELATIVE_POSITION]\n\n```\n[TARGET_LINES]\n```\n"
+}
