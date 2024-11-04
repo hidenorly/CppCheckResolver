@@ -46,6 +46,7 @@ class JsonCache:
     result = re.sub(r':', '_', result)
     result = re.sub(r'#', '_', result)
     result = re.sub(r'\n', '_', result)
+    result = re.sub('_+', '_', result)
     result = result + ".json"
     return result
 
