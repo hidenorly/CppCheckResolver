@@ -21,9 +21,86 @@ from GptHelper import GptClientFactory, IGpt, GptQueryWithCheck
 from ExecUtil import ExecUtil
 from JsonCache import JsonCache
 
+
+class MarkdownTableUtil:
+    def file_reader(path):
+        results = []
+        if os.path.exists( path ):
+            with open(path, 'r', encoding='UTF-8') as f:
+                the_file_content = f.read()
+                results = the_file_content.splitlines()
+        return results
+
+    def get_fields_pos(lines):
+        for i, line in enumerate(lines):
+            if "|" in line and (":--" in line or "--:" in line or ":-:" in line):
+                return max(i-1,0)
+        return None
+
+    def get_fields_and_data(lines):
+        fields = []
+        data = []
+
+        pos = MarkdownTableUtil.get_fields_pos(lines)
+        if pos!=None:
+            _fields = lines[pos].split("|") # TODO:should support ``````
+            for col in _fields:
+                col = col.strip()
+                if col:
+                    fields.append( col )
+            data = lines[min(pos+2, len(lines)):]
+
+        return fields, data
+
+    def parse(path):
+        results = []
+        lines = MarkdownTableUtil.file_reader(path)
+        if lines:
+            fields, data = MarkdownTableUtil.get_fields_and_data(lines)
+            fields_len = len(fields)
+            for line in data:
+                pos = line.find("|")
+                if pos!=None:
+                    line = line[pos+1:]
+                    pos = line.rfind("|")
+                    line = line[:pos]
+                    cols = line.split("|") # TODO:should support ``````
+                    row = {}
+                    for i, col in enumerate(cols):
+                        if i<fields_len:
+                            row[fields[i]] = col.strip()
+                    if row:
+                        results.append(row)
+        return results
+
+
+    def serialize(data, output_fields=None):
+        lines = []
+
+        # extracts current fields
+        if len(data)>0:
+            current_fields = data[0].keys()
+            if not output_fields:
+                output_fields = current_fields
+            lines.append( "| " + " | ".join(output_fields) + " |" )
+            lines.append( "| " + " :--- | "*len(output_fields) )
+            for row in data:
+                line = ""
+                for col in output_fields:
+                    if col in row:
+                        line += f" {row[col].strip()} |"
+                if line:
+                    lines.append("| "+line)
+
+        return lines
+
+
+
 class CppCheckerUtil:
     def __init__(self, cppchecker_path):
         self.cppchecker_path = cppchecker_path
+
+    REQUIRED_FIELDS = "filename|line|id|message|commitId|theLine"
 
     def parse_line(self, line):
         filename = None
@@ -36,7 +113,7 @@ class CppCheckerUtil:
         if line.startswith("| "):
             cols = line.split(" | ")
             if len(cols)==6:
-                filename = cols[0][2:]
+                filename = cols[0][2:].strip()
                 try:
                     line_number = int(cols[1])
                 except:
@@ -83,13 +160,20 @@ class CppCheckerUtil:
 
         return result
 
-
     def execute(self, target_path):
-        exec_cmd = f'ruby {self.cppchecker_path} {target_path} -m detail -s --detailSection=\"filename|line|id|message|commitId|theLine\"'
+        result = {}
+        if os.path.exists(args.cppcheck):
+            exec_cmd = f'ruby {self.cppchecker_path} {target_path} -m detail -s --detailSection=\"{self.REQUIRED_FIELDS}\"'
 
-        result = self.parse_result(ExecUtil.getExecResultEachLine(exec_cmd, target_path, False), target_path)
+            result = self.parse_result(ExecUtil.getExecResultEachLine(exec_cmd, target_path, False), target_path)
 
         return result
+
+    def existing_summary_reader(self, summary_path):
+        data = MarkdownTableUtil.parse(summary_path)
+        new_md_table = MarkdownTableUtil.serialize(data, self.REQUIRED_FIELDS.split("|"))
+        results = self.parse_result(new_md_table)
+        return results
 
 
 class CppCheckerResolverWithLLM(GptQueryWithCheck):
@@ -219,19 +303,26 @@ if __name__=="__main__":
     if args.reset:
         resolver.reset_cache()
 
-    if os.path.exists(args.cppcheck):
-        cppchecker = CppCheckerUtil(args.cppcheck)
-
-        for target_path in args.args:
+    cppchecker = CppCheckerUtil(args.cppcheck)
+    for target_path in args.args:
+        results = {}
+        if ":" in target_path:
+            _paths = target_path.split(":")
+            target_path = os.path.abspath(os.path.expanduser(_paths[0].strip())).strip()
+            report_path = os.path.abspath(os.path.expanduser(_paths[1].strip())).strip()
+            results = cppchecker.existing_summary_reader(report_path)
+        else:
             results = cppchecker.execute(target_path)
-            for filename, reports in results.items():
-                resolved_outputs = resolver.execute(target_path, filename, reports, args.onlynew)
-                resolved_outputs = sorted(resolved_outputs, key=lambda x: (x["filename"], x["pos"]))
-                if resolved_outputs:
-                    print(f"# {filename}")
+        for filename, reports in results.items():
+            resolved_outputs = resolver.execute(target_path, filename, reports, args.onlynew)
+            resolved_outputs = sorted(resolved_outputs, key=lambda x: (x["filename"], x["pos"]))
+            if resolved_outputs:
+                print(f"# {filename}")
+                print("")
+                for resolved_output in resolved_outputs:
+                    _resolved = resolved_output["message"].split("\n")[0]
+                    print(f"## {_resolved} (line:{resolved_output['pos']})")
+                    #print(f"## {resolved_output["message"].split("\n")[0]} (line:{resolved_output["pos"]})")
                     print("")
-                    for resolved_output in resolved_outputs:
-                        print(f"## {resolved_output["message"].split("\n")[0]} (line:{resolved_output["pos"]})")
-                        print("")
-                        print(resolved_output["resolution"])
-                        print("")
+                    print(resolved_output["resolution"])
+                    print("")
