@@ -94,6 +94,38 @@ class MarkdownTableUtil:
 
         return lines
 
+class SummaryReader:
+    def __init__(self, summary_path, target_base_path = "."):
+        self.summary_path = summary_path
+        self.target_base_path = os.path.abspath(os.path.expanduser(target_base_path))
+
+    def parse(self):
+        _summary = MarkdownTableUtil.parse(self.summary_path)
+        summary = self.summary = []
+
+        for data in _summary:
+            if "error" in data and data["error"]:
+                module_name = report_name = data["moduleName"]
+                pos1 = module_name.find("[")
+                pos2 = module_name.find("]")
+                pos3 = module_name.find("(")
+                pos4 = module_name.find(")")
+                if pos3!=None and pos4!=None:
+                    report_name = module_name[pos3+1:pos4]
+                if pos1!=None and pos2!=None:
+                    module_name = module_name[pos1+1:pos2]
+                path = data["path"]
+                if path.startswith("/"):
+                    path=path[1:]
+                _data = {
+                    "module_name" :  module_name,
+                    "report_name" :  report_name,
+                    "report_path" :  os.path.join(os.path.dirname(self.summary_path), report_name),
+                    "path" :  os.path.join(self.target_base_path, path)
+                }
+                summary.append(_data)
+
+        return summary
 
 
 class CppCheckerUtil:
@@ -114,6 +146,10 @@ class CppCheckerUtil:
             cols = line.split(" | ")
             if len(cols)==6:
                 filename = cols[0][2:].strip()
+                pos1 = cols[1].find("[")
+                pos2 = cols[1].find("]")
+                if pos1!=None and pos2!=None and pos2>pos1:
+                    cols[1] = cols[1][pos1+1:pos2]
                 try:
                     line_number = int(cols[1])
                 except:
@@ -265,9 +301,10 @@ class CppCheckerResolver:
                 # no hit in the cache
                 flatten_messages = "\n".join(multiple_messages)
                 target_lines, relative_pos = self.extract_target_lines(lines, line_number)
-                resolved_output, _ = self.resolver.query(target_lines, relative_pos, flatten_messages)
-                resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
-                self.cache.storeToCache(uri, resolved_output )
+                if target_lines:
+                    resolved_output, _ = self.resolver.query(target_lines, relative_pos, flatten_messages)
+                    resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
+                    self.cache.storeToCache(uri, resolved_output )
             elif is_only_new:
                 # found in cache & only_new then should omit
                 resolved_output = None
@@ -280,7 +317,7 @@ class CppCheckerResolver:
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='CppCheck Resolver')
-    parser.add_argument('args', nargs='*', help='target folder or android_home')
+    parser.add_argument('args', nargs='*', help='target folder or android_home or target_folder:report.md')
     parser.add_argument('--cppcheck', default=os.path.dirname(os.path.abspath(__file__))+"/../CppChecker/CppChecker.rb", help='Specify the path for CppChecker.rb')
     parser.add_argument('-m', '--marginline', default=10, type=int, action='store', help='Specify margin lines')
 
@@ -304,12 +341,28 @@ if __name__=="__main__":
         resolver.reset_cache()
 
     cppchecker = CppCheckerUtil(args.cppcheck)
+    target_paths = []
     for target_path in args.args:
-        results = {}
         if ":" in target_path:
             _paths = target_path.split(":")
             target_path = os.path.abspath(os.path.expanduser(_paths[0].strip())).strip()
             report_path = os.path.abspath(os.path.expanduser(_paths[1].strip())).strip()
+            if report_path.endswith("summary.md"):
+                summary = SummaryReader(report_path, target_path)
+                reports = summary.parse()
+                for report in reports:
+                    target_paths.append(os.path.join(target_path, report["path"])+":"+report["report_path"])
+            else:
+                target_paths.append(target_path+":"+report_path)
+        else:
+            target_paths.append(target_path)
+
+    for target_path in target_paths:
+        results = {}
+        if ":" in target_path:
+            _paths = target_path.split(":")
+            target_path = _paths[0]
+            report_path = _paths[1]
             results = cppchecker.existing_summary_reader(report_path)
         else:
             results = cppchecker.execute(target_path)
