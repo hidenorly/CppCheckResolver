@@ -303,8 +303,9 @@ class CppCheckerResolver:
                 target_lines, relative_pos = self.extract_target_lines(lines, line_number)
                 if target_lines:
                     resolved_output, _ = self.resolver.query(target_lines, relative_pos, flatten_messages)
-                    resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
-                    self.cache.storeToCache(uri, resolved_output )
+                    if resolved_output:
+                        resolved_output = {"filename": filename, "pos": line_number, "message": flatten_messages, "resolution": resolved_output}
+                        self.cache.storeToCache(uri, resolved_output )
             elif is_only_new:
                 # found in cache & only_new then should omit
                 resolved_output = None
